@@ -1,0 +1,90 @@
+spring:
+  application:
+    name: edutrack-backend
+
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/edutrack}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:password}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      connection-timeout: 30000
+      # FIX: Neon databases go to sleep. These prevent stale connection errors.
+      keepalive-time: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      connection-test-query: SELECT 1
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        # Sri Lanka timezone for all Hibernate date/time operations
+        jdbc:
+          time_zone: Asia/Colombo
+
+  # FIX: Removed the entire spring.mail SMTP block. Railway was timing out on
+  # outbound SMTP port 587 to smtp.resend.com (SocketTimeoutException), likely
+  # due to Railway's network blocking outbound SMTP ports on free/hobby plans.
+  # EmailService now calls Resend's HTTP API (https://api.resend.com/emails)
+  # directly over HTTPS port 443, which is never blocked. See RESEND_API_KEY
+  # below — it's read directly by EmailService via @Value, no spring.mail needed.
+
+server:
+  port: ${PORT:8080}
+  servlet:
+    context-path: /api
+  # Sri Lanka Standard Time (UTC+5:30)
+  tomcat:
+    timezone: Asia/Colombo
+
+edutrack:
+  jwt:
+    # FIX: Accepts either EDUTRACK_JWT_SECRET (what most PaaS env-var scanners
+    # auto-detect from this nested "edutrack.jwt.secret" path) or a plain
+    # JWT_SECRET, so the deploy platform's auto-detected field actually works.
+    # In production, ALWAYS set one of these to a 64+ char random string.
+    # The fallback below is public — NEVER rely on it in production.
+    secret: ${EDUTRACK_JWT_SECRET:${JWT_SECRET:CHANGE_ME_IN_PRODUCTION_USE_A_64_PLUS_CHARACTER_RANDOM_STRING_HERE_XYZ}}
+    # FIX: This used to be a hardcoded literal (86400000) so no env var could
+    # ever change it, even though the platform detected EDUTRACK_JWT_EXPIRATION_MS
+    # as a configurable field. Now it's actually wired up.
+    expiration-ms: ${EDUTRACK_JWT_EXPIRATION_MS:${JWT_EXPIRATION_MS:86400000}}
+  school:
+    name: ${EDUTRACK_SCHOOL_NAME:${SCHOOL_NAME:Mahinda College}}
+    # FIX: Removed the fake "noreply@edutrack.school" fallback domain.
+    # This domain doesn't exist and was never verified on Resend, so if
+    # this wasn't set correctly, every single email was silently rejected
+    # by Resend with an "unverified sender" error. There is intentionally
+    # NO default fallback — you must set this to your verified Resend
+    # sender address (e.g. noreply@yourdomain.com). Accepts either
+    # EDUTRACK_SCHOOL_EMAIL_FROM (auto-detected name) or plain EMAIL_FROM.
+    email-from: ${EDUTRACK_SCHOOL_EMAIL_FROM:${EMAIL_FROM:?Set EDUTRACK_SCHOOL_EMAIL_FROM (or EMAIL_FROM) to your verified Resend sender address}}
+  qr:
+    base-url: ${EDUTRACK_QR_BASE_URL:${QR_BASE_URL:https://app.edutrack.school}}
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,https://*.vercel.app}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+  health:
+    mail:
+      enabled: false
+
+logging:
+  level:
+    com.edutrack: INFO
+    org.springframework.security: WARN
